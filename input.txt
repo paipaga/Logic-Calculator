@@ -1,0 +1,9 @@
+T
+a&F
+a
+a|!a
+!p&!!p
+p&T|p
+p|!p&q
+p&!p&p
+!(p&q)|p
