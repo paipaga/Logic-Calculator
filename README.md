@@ -1,48 +1,137 @@
-# Calculadora lógica em Haskell
+# Logical calculator in Haskell
 
-Lê proposições do stdin, uma por linha, e classifica cada uma como `TAUTOLOGY`, `CONTRADICTION` ou `CONTINGENT`.
+Reads propositions from standard input, one per line, and classifies each one as `TAUTOLOGY`, `CONTRADICTION` or `CONTINGENT`.
 
-O programa faz isto a cada linha: **texto → `Prop` (parser) → tabela de verdade → classificação**.
+## How to use
 
-## Como correr
+You need GHC. `Prop.hs` and `Parsing.hs` must be in the same directory.
+
+### Run on a file
 
 ```
 runghc Prop.hs < input.txt
 ```
 
-## 1. Tipos ([linhas 7-15](Prop.hs#L7-L15))
+### Type the input by hand
 
-- **`Prop`:** é a árvore de uma proposição. Por exemplo, `a&T` fica `And (Var 'a') (Const True)`.
-- **`Name`:** é o nome de uma variável, ou seja, um `Char`.
-- **`Env`:** é uma atribuição de valores às variáveis, por exemplo `[('a',True),('b',False)]`.
+```
+runghc Prop.hs
+```
 
-## 2. Parser
+Type one proposition per line, and press `Ctrl+D` to finish.
 
-Um `Parser Prop` tenta ler uma `Prop` do início da string e devolve o que leu e o que sobrou. Por exemplo, `parse prop "a&b"` dá `[(And (Var 'a') (Var 'b'), "")]`.
+### Compile
 
-Duas regras do `Parsing.hs` explicam quase tudo:
+```
+ghc -o prop Prop.hs
+./prop < input.txt
+```
 
-- **Num `do`:** se um passo falha, o bloco inteiro falha.
-- **Em `p <|> q`:** se `p` falha, tenta `q` a partir do ponto onde `p` começou.
+### Use GHCi
 
-### `factor` ([linha 39](Prop.hs#L39))
+GHCi lets you classify a single proposition or see its parse tree:
 
-É a unidade mais pequena, e tenta cinco alternativas por ordem:
+```
+ghci Prop.hs
+ghci> evaluate "a&b|c"
+"CONTINGENT"
+ghci> parse prop "a&b|c"
+[(Or (And (Var 'a') (Var 'b')) (Var 'c'),"")]
+```
 
-1. **`!`:** lê outro `factor` e devolve `Not f`. É recursivo, por isso `!!a` funciona.
-2. **Letra minúscula:** devolve `Var x`.
-3. **`T`:** devolve `Const True`.
-4. **`F`:** devolve `Const False`.
-5. **`(`:** lê uma `prop` completa, exige `)` e devolve o que está lá dentro. Os parênteses não ficam na árvore.
+### Input syntax
 
-### `term` e `termCont` ([linhas 28-37](Prop.hs#L28-L37))
+| Symbol | Meaning |
+|---|---|
+| `a` to `z` | variable |
+| `T`, `F` | true, false |
+| `!` | negation |
+| `&` | conjunction |
+| `\|` | disjunction |
+| `(` `)` | grouping |
 
-- **`term`:** lê o primeiro `factor` e passa-o ao `termCont`.
-- **`termCont acc`:** `acc` é a árvore construída até agora.
-  - Se vier `&`, lê outro `factor` e continua com `And acc f`.
-  - Se não vier, devolve `acc`.
+- From highest to lowest, the precedence is `!`, `&`, `|`.
+- `&` and `|` are left-associative.
+- Spaces are not allowed, so `a & b` is a parse error.
 
-Para `a&b&c`, o acumulador evolui assim, e é isto que dá a associatividade à esquerda:
+### Output
+
+The program writes one line for each line of input:
+
+| Output | Meaning |
+|---|---|
+| `TAUTOLOGY` | true for every assignment of the variables |
+| `CONTRADICTION` | false for every assignment of the variables |
+| `CONTINGENT` | true for some assignments and false for others |
+| `parse error; try again` | the line is not a valid proposition |
+
+### Example
+
+Input:
+
+```
+T
+a&F
+a
+a|!a
+!p&!!p
+p&T|p
+p|!p&q
+p&!p&p
+!(p&q)|p
+```
+
+Output:
+
+```
+TAUTOLOGY
+CONTRADICTION
+CONTINGENT
+TAUTOLOGY
+CONTRADICTION
+CONTINGENT
+CONTINGENT
+CONTRADICTION
+TAUTOLOGY
+```
+
+## How it works
+
+Each line goes through the same pipeline: **text → `Prop` (parser) → truth table → classification**.
+
+### 1. Types ([lines 7-15](Prop.hs#L7-L15))
+
+- **`Prop`:** the tree of a proposition. For example, `a&T` becomes `And (Var 'a') (Const True)`.
+- **`Name`:** the name of a variable, which is a `Char`.
+- **`Env`:** an assignment of values to variables, for example `[('a',True),('b',False)]`.
+
+### 2. Parser
+
+A `Parser Prop` tries to read a `Prop` from the start of a string, and returns what it read and what was left over. For example, `parse prop "a&b"` gives `[(And (Var 'a') (Var 'b'), "")]`.
+
+Two rules from `Parsing.hs` explain almost everything:
+
+- **In a `do` block:** if one step fails, the whole block fails.
+- **In `p <|> q`:** if `p` fails, `q` is tried from the point where `p` started.
+
+#### `factor` ([line 37](Prop.hs#L37))
+
+This is the smallest unit. It tries five alternatives in order:
+
+1. **`!`:** reads another `factor` and returns `Not f`. It is recursive, so `!!a` works.
+2. **Lowercase letter:** returns `Var x`.
+3. **`T`:** returns `Const True`.
+4. **`F`:** returns `Const False`.
+5. **`(`:** reads a complete `prop`, requires `)` and returns what was inside. Parentheses do not appear in the tree.
+
+#### `term` and `termCont` ([lines 27-35](Prop.hs#L27-L35))
+
+- **`term`:** reads the first `factor` and passes it to `termCont`.
+- **`termCont acc`:** `acc` is the tree built so far.
+  - If the next character is `&`, it reads another `factor` and continues with `And acc f`.
+  - Otherwise, it returns `acc`.
+
+For `a&b&c`, the accumulator evolves as follows, which is what makes `&` left-associative:
 
 ```
 acc = a
@@ -50,94 +139,98 @@ acc = And a b
 acc = And (And a b) c
 ```
 
-### `prop` e `propCont` ([linhas 17-26](Prop.hs#L17-L26))
+#### `prop` and `propCont` ([lines 17-25](Prop.hs#L17-L25))
 
-Fazem o mesmo com `|` e `Or`, mas lendo `term`s em vez de `factor`s. Como cada `term` já consumiu todos os seus `&`, o `&` tem precedência sobre o `|`.
+These do the same with `|` and `Or`, but they read `term`s instead of `factor`s. Each `term` has already consumed all of its `&`s, which gives `&` higher precedence than `|`.
 
-### Exemplo completo: `a&b|c`
+#### Full example: `a&b|c`
 
-| Passo | Quem | Lê | Resultado | Sobra |
+| Step | Function | Reads | Result | Left over |
 |---|---|---|---|---|
 | 1 | `factor` | `a` | `Var a` | `&b\|c` |
 | 2 | `termCont` | `&b` | `And a b` | `\|c` |
-| 3 | `termCont` | falha no `&` (vê `\|`) | devolve `And a b` | `\|c` |
-| 4 | `propCont` | `\|` e o `term` `c` | `Or (And a b) c` | vazio |
-| 5 | `propCont` | falha no `\|` (fim) | devolve a árvore | vazio |
+| 3 | `termCont` | no `&` (sees `\|`) | returns `And a b` | `\|c` |
+| 4 | `propCont` | `\|` and the `term` `c` | `Or (And a b) c` | empty |
+| 5 | `propCont` | no `\|` (end of input) | returns the tree | empty |
 
-## 3. Avaliação
+### 3. Evaluation
 
-### `eval` ([linha 58](Prop.hs#L58))
+#### `eval` ([line 57](Prop.hs#L57))
 
-Calcula o valor de uma `Prop` numa atribuição, com um caso por construtor:
+Computes the value of a `Prop` under an assignment, with one case per constructor:
 
-- **`Const b`:** devolve `b`.
-- **`Var x`:** procura `x` no `env` com `lookup`, que devolve `Just b` ou `Nothing`.
-- **`Not`, `And`, `Or`:** avalia as subárvores e aplica `not`, `&&` ou `||`.
+- **`Const b`:** returns `b`.
+- **`Var x`:** looks up `x` in `env` with `lookup`, which returns `Just b` or `Nothing`.
+- **`Not`, `And`, `Or`:** evaluates the subtrees and applies `not`, `&&` or `||`.
 
-O caso `Nothing` nunca acontece aqui, porque `table` gera atribuições com todas as variáveis da proposição.
+The `Nothing` case never happens here, because `table` generates assignments that contain every variable of the proposition.
 
-### `vars` ([linha 70](Prop.hs#L70))
+#### `vars` ([line 69](Prop.hs#L69))
 
-Percorre a árvore e junta todas as variáveis. Pode haver repetidos: `a|!a` dá `"aa"`. É por isso que `table` usa `nub`.
+Walks the tree and collects all the variables. The result can contain duplicates: `a|!a` gives `"aa"`. That is why `table` uses `nub`.
 
-### `booleans` ([linha 77](Prop.hs#L77))
+#### `booleans` ([line 76](Prop.hs#L76))
 
-Gera todas as combinações de `n` booleanos, ou seja, 2ⁿ listas:
+Generates all combinations of `n` booleans, which is 2ⁿ lists:
 
-- **Caso base:** `booleans 0 = [[]]` é uma lista com uma combinação vazia.
-- **Caso recursivo:** pega nas combinações de `n-1`, acrescenta `False` a cada uma, depois `True`, e junta as duas listas.
+- **Base case:** `booleans 0 = [[]]` is a list with one empty combination.
+- **Recursive case:** takes the combinations for `n-1`, appends `False` to each one, then appends `True` to each one, and joins the two lists.
 
 ```
 booleans 1 = [[F], [T]]
 booleans 2 = [[F,F], [T,F], [F,T], [T,T]]
 ```
 
-### `environments` ([linha 81](Prop.hs#L81))
+#### `environments` ([line 80](Prop.hs#L80))
 
-Associa os nomes das variáveis a cada combinação com `zip`. Para `"ab"`:
+Pairs the variable names with each combination using `zip`. For `"ab"`:
 
 ```
 [ [(a,F),(b,F)], [(a,T),(b,F)], [(a,F),(b,T)], [(a,T),(b,T)] ]
 ```
 
-Sem variáveis, dá `[[]]`, ou seja, uma única atribuição vazia. Assim, `T` e `F` são avaliados uma vez.
+With no variables it gives `[[]]`, a single empty assignment. This way, `T` and `F` are evaluated once.
 
-### `table` ([linha 84](Prop.hs#L84))
+#### `table` ([line 83](Prop.hs#L83))
 
-É a tabela de verdade:
+Builds the truth table:
 
-1. `vars p` lista as variáveis.
-2. `nub` tira os repetidos.
-3. `environments` gera as atribuições.
-4. Para cada uma, guarda o par `(env, eval env p)`.
+1. `vars p` lists the variables.
+2. `nub` removes the duplicates.
+3. `environments` generates the assignments.
+4. For each assignment, it keeps the pair `(env, eval env p)`.
 
-## 4. Classificação
+#### `satisfies` ([line 86](Prop.hs#L86))
 
-### `classify` ([linha 87](Prop.hs#L87))
+Returns only the assignments that make the proposition true. The classification does not use it, but you can call it in GHCi.
 
-`map snd` fica só com a coluna dos resultados da tabela, e depois testa por ordem:
+### 4. Classification
 
-| Condição | Significado | Exemplo | `results` | Saída |
+#### `classify` ([line 89](Prop.hs#L89))
+
+`map snd` keeps only the results column of the table. The conditions are then tested in order:
+
+| Condition | Meaning | Example | `results` | Output |
 |---|---|---|---|---|
-| `and results` | todos verdadeiros | `a\|!a` | `[T,T]` | `TAUTOLOGY` |
-| `not (or results)` | nenhum verdadeiro | `a&F` | `[F,F]` | `CONTRADICTION` |
-| `otherwise` | há dos dois | `a` | `[F,T]` | `CONTINGENT` |
+| `and results` | all true | `a\|!a` | `[T,T]` | `TAUTOLOGY` |
+| `not (or results)` | none true | `a&F` | `[F,F]` | `CONTRADICTION` |
+| `otherwise` | a mix of both | `a` | `[F,T]` | `CONTINGENT` |
 
-## 5. Entrada e saída
+### 5. Input and output
 
-### `evaluate` ([linha 101](Prop.hs#L101))
+#### `evaluate` ([line 101](Prop.hs#L101))
 
-Corre o parser sobre uma linha e vê o resultado:
+Runs the parser on one line and checks the result:
 
-- **`[(tree, "")]`:** o parse funcionou e consumiu tudo, por isso classifica a árvore.
-- **Qualquer outro caso:** escreve a mensagem de erro.
+- **`[(tree, "")]`:** the parse succeeded and consumed everything, so it classifies the tree.
+- **Anything else:** returns the error message.
 
-Este teste ao resto é essencial. Em `a&`, o `termCont` lê o `&`, mas o `factor` falha, por isso o `<|>` recua e devolve `Var a` com resto `"&"`. O parse não falha por si, e só a verificação do resto `""` apanha o erro.
+This check on the left-over input is essential. In `a&`, `termCont` reads the `&` but `factor` fails, so `<|>` backtracks and returns `Var a` with `"&"` left over. The parse does not fail on its own, and only the check for `""` catches the error.
 
-### `calculator` ([linha 96](Prop.hs#L96))
+#### `calculator` ([line 96](Prop.hs#L96))
 
-Percorre a lista de linhas recursivamente. Se estiver vazia, termina. Caso contrário, escreve o resultado da primeira linha com `putStrLn` e continua com as restantes.
+Goes through the list of lines recursively. If the list is empty, it stops. Otherwise, it prints the result for the first line with `putStrLn` and continues with the rest.
 
-### `main` ([linha 107](Prop.hs#L107))
+#### `main` ([line 107](Prop.hs#L107))
 
-`getContents` lê todo o stdin, `lines` parte-o em linhas e `calculator` trata delas.
+`getContents` reads all of standard input, `lines` splits it into lines, and `calculator` handles them.
